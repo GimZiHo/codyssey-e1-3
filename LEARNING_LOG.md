@@ -475,6 +475,144 @@ OK
 
 다음 기능은 패턴 키 파싱이다. `size_13_2` 같은 문자열에서 크기 13과 케이스 식별자를 추출하여 `filters["size_13"]`을 선택할 근거를 만든다.
 
+## 단계 4: 패턴 키 파싱
+
+### 목적
+
+`data.json`의 패턴 키 `size_{N}_{case_id}`에서 행렬 크기 N과 케이스 식별자를 추출한다. 추출한 N으로 `filters`의 `size_N` 키를 만들어 해당 크기의 필터를 선택할 수 있다.
+
+문자열을 사용하는 곳마다 `split("_")`을 반복하지 않고 한 함수에서 형식을 검증하고 구조화하면, 키 규칙이 바뀌거나 오류가 생겼을 때 수정 및 진단 지점이 하나가 된다.
+
+### 핵심 개념
+
+#### 정규식과 전체 일치
+
+사용한 규칙은 다음과 같다.
+
+```text
+^size_([1-9]\d*)_([^\s]+)$
+```
+
+- `^`와 `$`: 문자열 전체가 규칙과 일치해야 한다.
+- `size_`: 반드시 필요한 접두사다.
+- `([1-9]\d*)`: 0이 아닌 양의 정수 N을 추출한다.
+- `_`: 크기와 식별자의 구분자다.
+- `([^\s]+)`: 공백이 없는 한 글자 이상의 식별자를 추출한다.
+
+`fullmatch()`를 사용하면 정상 키 뒤에 불필요한 문자열이나 공백이 붙은 경우도 거부할 수 있다.
+
+#### 구조화된 반환값
+
+파싱 결과는 `ParsedPatternKey` 데이터 클래스로 반환한다.
+
+```text
+ParsedPatternKey
+├── size: 13
+├── case_id: "2"
+└── filter_key: "size_13"
+```
+
+문자열 조각 두 개를 순서에 의존하는 tuple로 반환하는 대신 이름이 있는 필드를 사용하면 각 값의 의미를 코드에서 바로 알 수 있다. `frozen=True`는 파싱된 키 정보가 나중에 실수로 변경되는 것도 막는다.
+
+### 구현 내용
+
+- `mini_npu/loader.py`: 정규식, `ParsedPatternKey`, `parse_pattern_key()`
+- `tests/test_loader.py`: 정상 키 2개와 오류 키 6개
+
+현재 `loader.py`에는 키 파싱 기능만 있다. 실제 파일 읽기와 JSON 스키마 검증은 다음 기능에서 별도로 추가한다.
+
+### 입력 예시
+
+```text
+size_5_1
+size_13_2
+size_25_example
+size_0_1
+size_13_
+```
+
+### 처리 과정
+
+`size_13_2`는 다음 순서로 처리된다.
+
+```text
+"size_13_2"
+  → 정규식 전체 일치
+group(1) = "13"
+group(2) = "2"
+  → 크기를 int로 변환
+ParsedPatternKey(size=13, case_id="2")
+  → filter_key 속성
+"size_13"
+```
+
+`size_0_1`은 크기 부분이 `[1-9]`로 시작하지 않아 거부되고, `size_13_`은 식별자가 비어 있어 거부된다.
+
+### 예상 출력
+
+```text
+size_13_2 -> size=13, case_id=2, filter_key=size_13
+size_0_1  -> 오류
+size_13_  -> 오류
+```
+
+### 실제 출력
+
+```text
+size_5_1 -> size= 5 case_id= 1 filter_key= size_5
+size_13_2 -> size= 13 case_id= 2 filter_key= size_13
+size_25_example -> size= 25 case_id= example filter_key= size_25
+size_0_1 -> ERROR: invalid pattern key 'size_0_1': expected size_{N}_{case_id}.
+size_13_ -> ERROR: invalid pattern key 'size_13_': expected size_{N}_{case_id}.
+```
+
+### 테스트
+
+기능 전용 테스트:
+
+```bash
+python3 -B -m unittest tests.test_loader -v
+```
+
+```text
+Ran 8 tests in 0.000s
+OK
+```
+
+전체 회귀 테스트:
+
+```bash
+python3 -B -m unittest discover -s tests
+```
+
+```text
+Ran 44 tests in 0.002s
+OK
+```
+
+검증 사례:
+
+- 숫자 식별자를 가진 정상 키
+- 문자열 식별자를 가진 정상 키
+- 필터 조회용 `size_N` 생성
+- 접두사 누락
+- 식별자 누락
+- 크기 0 또는 음수
+- 키 내부 공백
+- 문자열이 아닌 키
+
+### 배운 점
+
+- 데이터 키도 하나의 스키마이므로 값을 읽기 전에 형식을 검증해야 한다.
+- 정규식의 캡처 그룹으로 검증과 값 추출을 한 번에 수행할 수 있다.
+- 전체 일치는 일부만 우연히 맞는 잘못된 키를 차단한다.
+- 데이터 클래스를 사용하면 파싱 결과의 각 값이 무엇을 의미하는지 명확해진다.
+- 패턴의 N에서 필터 키를 만들면 패턴 크기별 필터 선택을 하드코딩하지 않아도 된다.
+
+### 다음 단계
+
+다음 단일 기능은 `data.json` 파일 로드다. 파일 없음, JSON 문법 오류, 최상위 객체 여부를 처리하고 아직 개별 필터나 패턴을 분석하지 않은 원시 데이터 객체를 반환한다.
+
 ## 전체 테스트 이력
 
 | 단계 | 실행 명령 | 테스트 수 | 결과 | 비고 |
@@ -485,6 +623,8 @@ OK
 | 단계 2 | `python3 -B -m unittest discover -s tests -v` | 29 | PASS | 모드 1 입력, 재입력, 판정, 시간 측정 |
 | 단계 3 | `python3 -B -m unittest tests.test_labels -v` | 7 | PASS | 라벨 정규화 전용 테스트 |
 | 단계 3 | `python3 -B -m unittest discover -s tests` | 36 | PASS | 전체 회귀 테스트 |
+| 단계 4 | `python3 -B -m unittest tests.test_loader -v` | 8 | PASS | 패턴 키 파싱 전용 테스트 |
+| 단계 4 | `python3 -B -m unittest discover -s tests` | 44 | PASS | 전체 회귀 테스트 |
 
 ## 최종 회고
 
