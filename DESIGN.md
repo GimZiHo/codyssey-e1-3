@@ -54,6 +54,7 @@ codyssey-e1-3/
 │       ├── valid_data.json
 │       └── invalid_data.json
 ├── README.md                  # 평가자가 보는 최종 실행/설계/결과 보고서
+├── LEARNING_LOG.md            # 단계별 입력·처리·출력, 테스트, 핵심 개념 기록
 ├── DESIGN.md                  # 이 설계서
 ├── problem.md                 # 원문 기반 과제 요구사항
 └── evaluation.md              # 원문 기반 평가 체크리스트
@@ -370,6 +371,8 @@ python -m unittest discover -s tests -v
 - 핵심 단위 테스트 작성
 
 완료 기준: 예시 점수 5/1과 epsilon 경계 테스트가 통과한다.
+
+각 구현 단계가 끝날 때 실행한 테스트, 대표 입력, 내부 처리 과정, 실제 출력, 새로 배운 개념을 `LEARNING_LOG.md`에 기록한다. 자동으로 재실행할 가치가 있는 검증은 설명만 남기지 않고 `tests/`의 `unittest` 코드로 작성한다.
 
 ### 2단계: 모드 1
 
