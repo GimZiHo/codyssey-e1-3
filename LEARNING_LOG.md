@@ -343,6 +343,138 @@ OK
 
 다음 단계에서는 `data.json`을 읽고 `meta`, `filters`, `patterns`를 검증한다. 필터 키와 expected 라벨을 표준화하고 패턴 키에서 N을 추출한 뒤, 케이스 하나의 오류가 전체 분석을 중단하지 않도록 결과 모델에 기록한다.
 
+## 단계 3: 라벨 정규화
+
+### 목적
+
+`data.json`은 같은 의미를 서로 다른 문자열로 표현한다. expected의 `+`와 필터 키의 `cross`는 모두 십자가를 뜻하고, `x`는 X를 뜻한다. 외부 표현을 그대로 비교하면 `+ != cross`이므로 실제 의미가 같은데도 FAIL이 발생한다.
+
+`normalize_label()`은 외부 표현을 내부 표준 라벨 `Cross`, `X`로 통일한다. 이 함수는 점수를 계산하거나 승자를 판정하지 않고 문자열의 의미만 변환한다.
+
+### 핵심 개념
+
+#### 정규화
+
+정규화는 여러 표현을 하나의 대표값으로 바꾸는 과정이다.
+
+```text
+"+"       ─┐
+"cross"   ├─→ "Cross"
+" Cross " ┘
+
+"x"       ─┐
+"X"       ├─→ "X"
+" x "     ┘
+```
+
+내부 로직이 표준값만 다루면 비교 조건이 단순해지고, 새 별칭이 추가되어도 매핑 한곳만 수정할 수 있다.
+
+#### 입력 정리 순서
+
+1. 문자열인지 확인한다.
+2. `strip()`으로 앞뒤 공백을 제거한다.
+3. `lower()`로 대소문자를 통일한다.
+4. 별칭 사전에서 표준 라벨을 찾는다.
+5. 등록되지 않은 값은 `ValueError`로 거부한다.
+
+알 수 없는 값을 그대로 반환하지 않는 이유는 오타나 새 스키마를 정상 라벨처럼 통과시키지 않기 위해서다.
+
+### 구현 내용
+
+- `mini_npu/labels.py`: `LABEL_ALIASES`, `normalize_label()`
+- `tests/test_labels.py`: 정상 별칭, 공백·대소문자, 오류 사례 7개
+
+### 입력 예시
+
+```text
+"+"
+" cross "
+"x"
+"X"
+"circle"
+```
+
+### 처리 과정
+
+입력 `" cross "`의 처리 과정은 다음과 같다.
+
+```text
+" cross "
+  → strip()
+"cross"
+  → lower()
+"cross"
+  → LABEL_ALIASES["cross"]
+"Cross"
+```
+
+입력 `"circle"`은 정리 후에도 별칭 사전에 없으므로 오류가 된다.
+
+### 예상 출력
+
+```text
+"+"       -> Cross
+" cross " -> Cross
+"x"       -> X
+"X"       -> X
+"circle"  -> 오류
+```
+
+### 실제 출력
+
+```text
+'+' -> Cross
+' cross ' -> Cross
+'x' -> X
+'X' -> X
+'circle' -> ERROR: unsupported label: 'circle'.
+```
+
+### 테스트
+
+기능 전용 테스트:
+
+```bash
+python3 -B -m unittest tests.test_labels -v
+```
+
+```text
+Ran 7 tests in 0.000s
+OK
+```
+
+전체 회귀 테스트:
+
+```bash
+python3 -B -m unittest discover -s tests
+```
+
+```text
+Ran 36 tests in 0.002s
+OK
+```
+
+검증 사례:
+
+- `+` → `Cross`
+- `cross` → `Cross`
+- `x` → `X`
+- 공백과 혼합 대소문자 허용
+- 빈 문자열 거부
+- 알 수 없는 라벨 거부
+- 문자열이 아닌 값 거부
+
+### 배운 점
+
+- 데이터 표현과 프로그램 내부 의미는 분리할 수 있다.
+- 정규화 지점이 하나면 이후 비교 코드에서 여러 별칭을 반복 처리하지 않아도 된다.
+- 알 수 없는 입력을 일찍 거부하면 잘못된 FAIL의 원인을 찾기 쉽다.
+- 기능 전용 테스트와 전체 테스트를 함께 실행하면 새 기능 자체와 기존 기능의 회귀를 모두 확인할 수 있다.
+
+### 다음 단계
+
+다음 기능은 패턴 키 파싱이다. `size_13_2` 같은 문자열에서 크기 13과 케이스 식별자를 추출하여 `filters["size_13"]`을 선택할 근거를 만든다.
+
 ## 전체 테스트 이력
 
 | 단계 | 실행 명령 | 테스트 수 | 결과 | 비고 |
@@ -351,6 +483,8 @@ OK
 | 단계 1 | `python3 -m unittest discover -s tests -v` | 16 | PASS | 행렬 검증, 2D MAC, epsilon 비교 |
 | 단계 1 | `python3 -m compileall -q mini_npu tests` | 해당 없음 | 환경 오류 | 읽기 전용 환경에서 `__pycache__` 생성 불가 |
 | 단계 2 | `python3 -B -m unittest discover -s tests -v` | 29 | PASS | 모드 1 입력, 재입력, 판정, 시간 측정 |
+| 단계 3 | `python3 -B -m unittest tests.test_labels -v` | 7 | PASS | 라벨 정규화 전용 테스트 |
+| 단계 3 | `python3 -B -m unittest discover -s tests` | 36 | PASS | 전체 회귀 테스트 |
 
 ## 최종 회고
 
