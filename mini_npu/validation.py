@@ -1,4 +1,4 @@
-"""Validation helpers for matrices used by MAC operations."""
+"""MAC 연산에 들어가는 행렬의 형태와 값 검증을 담당한다."""
 
 import math
 from typing import List, Optional
@@ -12,16 +12,19 @@ def validate_square_matrix(
     expected_size: Optional[int] = None,
     name: str = "matrix",
 ) -> int:
-    """Validate a finite numeric square matrix and return its size.
+    """값이 유한한 숫자로 구성된 정사각 행렬인지 검증한다.
 
     Args:
-        matrix: Two-dimensional list to validate.
-        expected_size: Required side length when a size is already known.
-        name: Human-readable name included in error messages.
+        matrix: 검증할 2차원 리스트.
+        expected_size: 이미 정해진 행렬 한 변의 길이. 없으면 생략한다.
+        name: 오류 메시지에서 행렬을 구분할 이름.
+
+    Returns:
+        검증을 통과한 정사각 행렬의 한 변 길이.
 
     Raises:
-        ValueError: If the value is empty, non-square, has the wrong size,
-            or contains a non-numeric/non-finite value.
+        ValueError: 행렬이 비었거나 정사각형이 아니거나, 예상 크기와
+            다르거나, 숫자가 아닌 값 또는 유한하지 않은 값이 있을 때.
     """
     if not isinstance(matrix, list) or not matrix:
         raise ValueError("{} must be a non-empty two-dimensional list.".format(name))

@@ -1,9 +1,10 @@
-"""Console entry point for the Mini NPU Simulator."""
+"""Mini NPU Simulator의 콘솔 실행 진입점을 제공한다."""
 
 from mini_npu.modes import run_mode1
 
 
 def main() -> None:
+    """메뉴를 출력하고 사용자가 선택한 실행 모드로 연결한다."""
     print("=== Mini NPU Simulator ===")
     print("\n[모드 선택]")
     print("1. 사용자 입력 (3x3)")

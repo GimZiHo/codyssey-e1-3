@@ -982,6 +982,110 @@ OK
 
 다음 단일 기능은 패턴 케이스 검증이다. 패턴 키에서 N을 얻고 `input`, `expected`를 검사한 뒤 expected를 표준 라벨로 정규화한다. 아직 MAC 판정은 수행하지 않는다.
 
+## 단계 8: Python 함수 docstring 정리
+
+### 목적
+
+현재까지 구현한 함수의 역할, 입력, 반환값, 발생 가능한 예외를 코드 가까이에 기록한다. 학생이 함수 본문을 모두 해석하기 전에 사용 목적과 계약을 이해하고, IDE나 `help()`에서도 같은 설명을 볼 수 있게 한다.
+
+### 핵심 개념
+
+#### Python의 docstring
+
+Python에서는 보통 함수 선언 위에 `#` 주석을 두기보다 함수 본문의 첫 문장으로 문자열을 작성한다.
+
+```python
+def add(a, b):
+    """두 숫자를 더해 반환한다.
+
+    Args:
+        a: 첫 번째 숫자.
+        b: 두 번째 숫자.
+
+    Returns:
+        두 숫자의 합.
+    """
+```
+
+이 문자열이 docstring이다. Java의 Javadoc과 목적이 비슷하지만 `/** ... */` 대신 Python 객체의 `__doc__` 속성에 실제로 저장된다.
+
+```python
+print(add.__doc__)
+help(add)
+```
+
+#### PEP 257과 Google 스타일
+
+PEP 257은 docstring을 어디에 두고 첫 줄을 어떻게 요약할지 설명하는 Python 관례다. `Args`, `Returns`, `Raises` 표기는 Python 문법 자체가 아니라 널리 쓰이는 Google 스타일 문서 형식이다.
+
+- 첫 줄: 함수가 무엇을 하는지 짧게 설명
+- `Args`: 각 인자의 의미
+- `Returns`: 반환값의 의미
+- `Raises`: 호출자가 처리해야 할 예외
+
+모든 섹션을 무조건 작성하지 않는다. 인자가 없고 동작이 명확한 `main()`은 한 줄 설명으로 충분하다.
+
+#### docstring, 일반 주석, 타입 힌트의 차이
+
+- **docstring:** 함수의 사용 목적과 계약을 설명하며 `help()`에서 볼 수 있다.
+- **일반 주석(`#`):** 코드 안에서 왜 특이한 처리를 했는지 설명한다.
+- **타입 힌트:** 어떤 자료형을 주고받는지 표현한다.
+
+코드를 그대로 한국어로 번역한 주석은 금방 낡고 읽을 내용만 늘어난다. 그래서 함수의 역할은 docstring에 적고, 구현에서 예상하기 어려운 이유가 있을 때만 일반 주석을 사용한다.
+
+### 적용 내용
+
+- `main.py`와 `mini_npu` 패키지의 모듈 역할을 한국어로 설명
+- 모든 공개 함수에 역할 설명 추가
+- 필요한 함수에 `Args`, `Returns`, `Raises` 추가
+- 결과 데이터 클래스와 예외 클래스의 목적 설명
+- 실행 로직과 테스트 기대값은 변경하지 않음
+
+### 실제 확인
+
+```bash
+python3 -B -c 'from mini_npu.core import mac_2d; help(mac_2d)'
+```
+
+출력 일부:
+
+```text
+mac_2d(pattern: List[List[float]], filter_matrix: List[List[float]]) -> float
+    패턴과 필터의 같은 위치 값을 곱해 모두 더한 MAC 점수를 구한다.
+
+    Args:
+        pattern: 입력 패턴을 나타내는 N×N 숫자 행렬.
+        filter_matrix: 비교 기준인 N×N 숫자 행렬.
+
+    Returns:
+        위치별 곱셈 결과를 모두 누적한 실수 점수.
+```
+
+### 테스트
+
+문서화만 변경했지만 따옴표와 들여쓰기도 Python 문법이므로 전체 테스트를 실행했다.
+
+```bash
+python3 -B -m unittest discover -s tests
+```
+
+```text
+Ran 64 tests in 0.005s
+OK
+```
+
+### 배운 점
+
+- Python의 함수 문서는 일반 주석보다 docstring으로 남기는 것이 보통이다.
+- docstring은 실행 중 조회할 수 있어 IDE, `help()`, 문서 생성 도구가 활용한다.
+- 좋은 설명은 코드가 무엇을 하는지만 반복하지 않고 입력 조건, 반환 의미, 실패 조건을 알려준다.
+- 타입 힌트가 자료형을 보여줘도 값의 의미와 제약까지 설명하지는 않으므로 docstring과 역할이 다르다.
+- 문서 변경도 문법을 깨뜨릴 수 있으므로 테스트가 필요하다.
+
+### 다음 단계
+
+다음 단일 기능부터 새 함수가 생길 때 같은 한국어 Google 스타일 docstring을 함께 작성한다. 다음 구현 대상은 패턴 케이스의 `input`, `expected`, N×N 크기 검증이다.
+
 ## 전체 테스트 이력
 
 | 단계 | 실행 명령 | 테스트 수 | 결과 | 비고 |
@@ -1001,6 +1105,7 @@ OK
 | 단계 6 | `python3 -B -m unittest discover -s tests` | 55 | PASS | 전체 회귀 테스트 |
 | 단계 7 | `python3 -B -m unittest tests.test_loader.ValidateFilterGroupTests -v` | 9 | PASS | 필터 그룹 검증 전용 테스트 |
 | 단계 7 | `python3 -B -m unittest discover -s tests` | 64 | PASS | 전체 회귀 테스트 |
+| 단계 8 | `python3 -B -m unittest discover -s tests` | 64 | PASS | 전체 함수 docstring 정리 후 회귀 테스트 |
 
 ## 최종 회고
 

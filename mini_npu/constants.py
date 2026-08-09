@@ -1,4 +1,4 @@
-"""Constants shared across the Mini NPU simulator."""
+"""여러 모듈이 함께 사용하는 설정값과 표준 라벨을 정의한다."""
 
 EPSILON = 1e-9
 BENCHMARK_REPEATS = 10

@@ -1,4 +1,4 @@
-"""Application workflows for each simulator mode."""
+"""Mini NPU Simulator의 모드별 실행 흐름을 구성한다."""
 
 from typing import Callable, Optional
 
@@ -9,7 +9,15 @@ from mini_npu.input_handler import read_square_matrix
 
 
 def mode1_decision(score_a: float, score_b: float) -> str:
-    """Convert the shared score comparison into mode 1 wording."""
+    """두 점수의 비교 결과를 모드 1의 A/B/판정 불가로 바꾼다.
+
+    Args:
+        score_a: 필터 A의 MAC 점수.
+        score_b: 필터 B의 MAC 점수.
+
+    Returns:
+        `A`, `B`, `판정 불가` 중 하나.
+    """
     comparison = compare_scores(score_a, score_b)
     if comparison == 0:
         return "판정 불가"
@@ -20,7 +28,12 @@ def run_mode1(
     input_fn: Optional[Callable[[str], str]] = None,
     output_fn: Optional[Callable[[str], None]] = None,
 ) -> None:
-    """Run the interactive 3x3 input workflow."""
+    """필터 두 개와 패턴을 입력받아 판정하는 3×3 모드를 실행한다.
+
+    Args:
+        input_fn: 입력 함수. 생략하면 내장 `input`을 사용한다.
+        output_fn: 출력 함수. 생략하면 내장 `print`를 사용한다.
+    """
     actual_output = print if output_fn is None else output_fn
 
     actual_output("\n[1] 필터 입력")

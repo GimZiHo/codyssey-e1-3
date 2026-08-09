@@ -1,4 +1,4 @@
-"""Console input parsing for square matrices."""
+"""콘솔 문자열을 정사각 숫자 행렬로 입력받는 기능을 제공한다."""
 
 import math
 from typing import Callable, List, Optional
@@ -7,7 +7,19 @@ from mini_npu.validation import Matrix
 
 
 def parse_matrix_row(text: str, size: int) -> List[float]:
-    """Parse one whitespace-separated row containing exactly ``size`` numbers."""
+    """공백으로 구분된 한 줄을 지정한 개수의 실수로 변환한다.
+
+    Args:
+        text: 사용자가 입력한 행 문자열.
+        size: 한 행에 필요한 숫자의 개수.
+
+    Returns:
+        문자열의 각 값을 float로 변환한 한 행.
+
+    Raises:
+        ValueError: 열 개수가 다르거나 숫자로 변환할 수 없거나,
+            유한하지 않은 값이 있을 때.
+    """
     parts = text.split()
     if len(parts) != size:
         raise ValueError(
@@ -31,7 +43,20 @@ def read_square_matrix(
     input_fn: Optional[Callable[[str], str]] = None,
     output_fn: Optional[Callable[[str], None]] = None,
 ) -> Matrix:
-    """Read a square matrix, retrying only the row that contains an error."""
+    """정사각 행렬을 한 행씩 입력받고 잘못된 행만 다시 요청한다.
+
+    Args:
+        name: 화면에 표시할 행렬 이름.
+        size: 입력받을 행과 열의 개수.
+        input_fn: 입력 함수. 생략하면 내장 `input`을 사용한다.
+        output_fn: 출력 함수. 생략하면 내장 `print`를 사용한다.
+
+    Returns:
+        입력 검증을 통과한 size×size 실수 행렬.
+
+    Raises:
+        ValueError: size가 0 이하일 때.
+    """
     if size <= 0:
         raise ValueError("size must be positive.")
 
