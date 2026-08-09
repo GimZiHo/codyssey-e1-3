@@ -7,8 +7,10 @@ from mini_npu.loader import (
     ParsedPatternKey,
     SchemaValidationError,
     TopLevelSchema,
+    ValidatedFilterGroup,
     load_json_file,
     parse_pattern_key,
+    validate_filter_group,
     validate_top_level_schema,
 )
 
@@ -135,6 +137,77 @@ class ValidateTopLevelSchemaTests(unittest.TestCase):
     def test_rejects_non_object_top_level_data(self):
         with self.assertRaisesRegex(SchemaValidationError, "top-level"):
             validate_top_level_schema([])
+
+
+class ValidateFilterGroupTests(unittest.TestCase):
+    @staticmethod
+    def matrix(size):
+        return [[0.0 for _ in range(size)] for _ in range(size)]
+
+    def test_normalizes_and_validates_cross_and_x_filters(self):
+        cross = self.matrix(3)
+        x_filter = self.matrix(3)
+
+        result = validate_filter_group(
+            "size_3", {"cross": cross, "x": x_filter}
+        )
+
+        self.assertEqual(
+            result,
+            ValidatedFilterGroup(
+                size=3,
+                filters={"Cross": cross, "X": x_filter},
+            ),
+        )
+
+    def test_accepts_standard_labels_with_different_case(self):
+        matrix = self.matrix(1)
+
+        result = validate_filter_group(
+            "size_1", {"Cross": matrix, "X": matrix}
+        )
+
+        self.assertEqual(set(result.filters), {"Cross", "X"})
+
+    def test_rejects_malformed_group_key(self):
+        with self.assertRaisesRegex(SchemaValidationError, "expected size"):
+            validate_filter_group(
+                "filters_3", {"cross": self.matrix(3), "x": self.matrix(3)}
+            )
+
+    def test_rejects_non_object_group(self):
+        with self.assertRaisesRegex(SchemaValidationError, "must be an object"):
+            validate_filter_group("size_3", [])
+
+    def test_rejects_unknown_filter_label(self):
+        with self.assertRaisesRegex(SchemaValidationError, "invalid label"):
+            validate_filter_group(
+                "size_1", {"cross": self.matrix(1), "circle": self.matrix(1)}
+            )
+
+    def test_rejects_duplicate_normalized_label(self):
+        matrix = self.matrix(1)
+
+        with self.assertRaisesRegex(SchemaValidationError, "duplicate label"):
+            validate_filter_group(
+                "size_1", {"cross": matrix, "Cross": matrix, "x": matrix}
+            )
+
+    def test_rejects_missing_x_filter(self):
+        with self.assertRaisesRegex(SchemaValidationError, "missing: X"):
+            validate_filter_group("size_1", {"cross": self.matrix(1)})
+
+    def test_rejects_matrix_with_wrong_size(self):
+        with self.assertRaisesRegex(SchemaValidationError, "must have 3 rows"):
+            validate_filter_group(
+                "size_3", {"cross": self.matrix(2), "x": self.matrix(3)}
+            )
+
+    def test_rejects_non_numeric_matrix_value(self):
+        with self.assertRaisesRegex(SchemaValidationError, "must be a number"):
+            validate_filter_group(
+                "size_1", {"cross": [["0"]], "x": self.matrix(1)}
+            )
 
 
 if __name__ == "__main__":

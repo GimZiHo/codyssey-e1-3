@@ -6,8 +6,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Tuple, Union
 
+from mini_npu.constants import CROSS, X_LABEL
+from mini_npu.labels import normalize_label
+from mini_npu.validation import Matrix, validate_square_matrix
+
 
 PATTERN_KEY = re.compile(r"^size_([1-9]\d*)_([^\s]+)$")
+FILTER_GROUP_KEY = re.compile(r"^size_([1-9]\d*)$")
 
 
 class DataLoadError(Exception):
@@ -38,6 +43,14 @@ class TopLevelSchema:
     filters: Dict[str, Any]
     patterns: Dict[str, Any]
     warnings: Tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ValidatedFilterGroup:
+    """A size-specific pair of normalized and validated filters."""
+
+    size: int
+    filters: Dict[str, Matrix]
 
 
 def parse_pattern_key(key: str) -> ParsedPatternKey:
@@ -113,3 +126,67 @@ def validate_top_level_schema(data: Dict[str, Any]) -> TopLevelSchema:
         patterns=data["patterns"],
         warnings=tuple(warnings),
     )
+
+
+def validate_filter_group(
+    group_key: str,
+    raw_group: Any,
+) -> ValidatedFilterGroup:
+    """Validate one ``size_N`` group containing Cross and X matrices."""
+    if not isinstance(group_key, str):
+        raise SchemaValidationError("filter group key must be a string.")
+
+    match = FILTER_GROUP_KEY.fullmatch(group_key)
+    if match is None:
+        raise SchemaValidationError(
+            "invalid filter group key {!r}: expected size_{{N}}.".format(
+                group_key
+            )
+        )
+
+    if not isinstance(raw_group, dict):
+        raise SchemaValidationError(
+            "filter group {!r} must be an object.".format(group_key)
+        )
+
+    size = int(match.group(1))
+    normalized_filters = {}
+    for raw_label, matrix in raw_group.items():
+        try:
+            label = normalize_label(raw_label)
+        except ValueError as error:
+            raise SchemaValidationError(
+                "filter group {!r} has invalid label {!r}.".format(
+                    group_key, raw_label
+                )
+            ) from error
+
+        if label in normalized_filters:
+            raise SchemaValidationError(
+                "filter group {!r} has duplicate label {!r}.".format(
+                    group_key, label
+                )
+            )
+
+        try:
+            validate_square_matrix(
+                matrix,
+                expected_size=size,
+                name="{}.{} filter".format(group_key, label),
+            )
+        except ValueError as error:
+            raise SchemaValidationError(str(error)) from error
+
+        normalized_filters[label] = matrix
+
+    missing_labels = [
+        label for label in (CROSS, X_LABEL) if label not in normalized_filters
+    ]
+    if missing_labels:
+        raise SchemaValidationError(
+            "filter group {!r} is missing: {}.".format(
+                group_key, ", ".join(missing_labels)
+            )
+        )
+
+    return ValidatedFilterGroup(size=size, filters=normalized_filters)

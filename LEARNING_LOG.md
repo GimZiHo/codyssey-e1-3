@@ -863,6 +863,125 @@ OK
 
 다음 단일 기능은 필터 그룹 검증이다. `size_5` 같은 필터 키에서 크기를 확인하고 `cross`, `x` 라벨을 정규화하며 두 필터가 모두 N×N 유한 숫자 행렬인지 검증한다.
 
+## 단계 7: 필터 그룹 검증
+
+### 목적
+
+`filters` 안의 `size_N` 그룹 하나가 Cross와 X 필터를 올바르게 포함하는지 검증한다. 그룹 키에서 N을 추출하고, 필터 라벨을 표준화하며, 두 행렬이 모두 N×N 유한 숫자 행렬인지 확인한다.
+
+### 핵심 개념
+
+#### 선언된 크기와 실제 크기
+
+`size_13`이라는 키는 행렬이 13×13이어야 한다는 스키마 선언이다. 키만 믿지 않고 실제 행과 열을 확인해야 잘못된 데이터가 MAC 반복문에 들어가는 것을 막을 수 있다.
+
+```text
+size_13
+   ├── 키가 선언한 크기: 13
+   └── 실제 행렬: 13행 × 각 13열인지 검증
+```
+
+#### 정규화 후 중복 검사
+
+`cross`와 `Cross`는 문자열은 다르지만 정규화하면 둘 다 `Cross`다. 정규화 이후 중복을 검사하지 않으면 어느 필터를 사용할지 입력 순서에 따라 달라질 수 있으므로 오류로 처리한다.
+
+#### 검증 결과
+
+`ValidatedFilterGroup`은 크기와 표준 라벨로 정리된 필터를 반환한다.
+
+```text
+입력:  {"cross": matrix_a, "x": matrix_b}
+출력: ValidatedFilterGroup(
+        size=5,
+        filters={"Cross": matrix_a, "X": matrix_b}
+      )
+```
+
+### 구현 내용
+
+- `mini_npu/loader.py`
+  - `FILTER_GROUP_KEY`
+  - `ValidatedFilterGroup`
+  - `validate_filter_group()`
+- `tests/test_loader.py`
+  - 정상 라벨/크기
+  - 그룹 키, 라벨, 필터 누락, 행렬 오류
+
+이번 기능은 그룹 하나만 검증한다. 모든 그룹을 순회하거나 패턴에 연결하는 책임은 이후 분석 흐름에 둔다.
+
+### 처리 과정
+
+`size_5` 그룹은 다음 순서로 처리된다.
+
+```text
+"size_5"
+  → 정규식으로 N=5 추출
+  → 그룹 값이 dict인지 확인
+  → "cross"를 "Cross"로 정규화
+  → Cross 행렬이 5×5 유한 숫자인지 확인
+  → "x"를 "X"로 정규화
+  → X 행렬이 5×5 유한 숫자인지 확인
+  → Cross와 X가 모두 존재하는지 확인
+  → ValidatedFilterGroup 반환
+```
+
+### 실제 출력
+
+제공된 `data.json`의 모든 필터 그룹을 검증한 결과:
+
+```text
+size_5 -> size= 5 labels= ['Cross', 'X']
+size_13 -> size= 13 labels= ['Cross', 'X']
+size_25 -> size= 25 labels= ['Cross', 'X']
+```
+
+### 테스트
+
+기능 전용 테스트:
+
+```bash
+python3 -B -m unittest tests.test_loader.ValidateFilterGroupTests -v
+```
+
+```text
+Ran 9 tests in 0.001s
+OK
+```
+
+전체 회귀 테스트:
+
+```bash
+python3 -B -m unittest discover -s tests
+```
+
+```text
+Ran 64 tests in 0.005s
+OK
+```
+
+검증 사례:
+
+- `cross/x`를 `Cross/X`로 정규화
+- 표준 라벨의 대소문자 처리
+- 잘못된 그룹 키
+- 그룹 값이 객체가 아닌 경우
+- 알 수 없는 필터 라벨
+- 정규화 후 중복 라벨
+- X 필터 누락
+- 키의 N과 행렬 크기 불일치
+- 숫자가 아닌 행렬 값
+
+### 배운 점
+
+- 데이터 키에 포함된 크기와 실제 자료구조를 함께 검증해야 한다.
+- 정규화는 비교 전에 수행해야 같은 의미의 중복을 발견할 수 있다.
+- 필수 구성요소를 명시적으로 검사하면 이후 코드에서 Cross/X 필터가 있다고 가정할 수 있다.
+- 기존 행렬 검증 함수를 재사용하면 콘솔 입력과 JSON 데이터가 같은 숫자 규칙을 공유한다.
+
+### 다음 단계
+
+다음 단일 기능은 패턴 케이스 검증이다. 패턴 키에서 N을 얻고 `input`, `expected`를 검사한 뒤 expected를 표준 라벨로 정규화한다. 아직 MAC 판정은 수행하지 않는다.
+
 ## 전체 테스트 이력
 
 | 단계 | 실행 명령 | 테스트 수 | 결과 | 비고 |
@@ -880,6 +999,8 @@ OK
 | 단계 5 | `python3 -B -m unittest discover -s tests` | 48 | PASS | 전체 회귀 테스트 |
 | 단계 6 | `python3 -B -m unittest tests.test_loader.ValidateTopLevelSchemaTests -v` | 7 | PASS | 최상위 스키마 검증 전용 테스트 |
 | 단계 6 | `python3 -B -m unittest discover -s tests` | 55 | PASS | 전체 회귀 테스트 |
+| 단계 7 | `python3 -B -m unittest tests.test_loader.ValidateFilterGroupTests -v` | 9 | PASS | 필터 그룹 검증 전용 테스트 |
+| 단계 7 | `python3 -B -m unittest discover -s tests` | 64 | PASS | 전체 회귀 테스트 |
 
 ## 최종 회고
 
