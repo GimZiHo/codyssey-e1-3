@@ -1,6 +1,13 @@
+import json
 import unittest
+from unittest.mock import mock_open, patch
 
-from mini_npu.loader import ParsedPatternKey, parse_pattern_key
+from mini_npu.loader import (
+    DataLoadError,
+    ParsedPatternKey,
+    load_json_file,
+    parse_pattern_key,
+)
 
 
 class ParsePatternKeyTests(unittest.TestCase):
@@ -40,6 +47,35 @@ class ParsePatternKeyTests(unittest.TestCase):
     def test_rejects_non_string_key(self):
         with self.assertRaisesRegex(ValueError, "must be a string"):
             parse_pattern_key(13)
+
+
+class LoadJsonFileTests(unittest.TestCase):
+    def test_loads_utf8_json_object(self):
+        expected = {"message": "십자가", "filters": {}}
+
+        with patch(
+            "pathlib.Path.open",
+            mock_open(read_data=json.dumps(expected, ensure_ascii=False)),
+        ):
+            self.assertEqual(load_json_file("data.json"), expected)
+
+    def test_rejects_missing_file(self):
+        error = FileNotFoundError(2, "No such file or directory")
+        with patch("pathlib.Path.open", side_effect=error):
+            with self.assertRaisesRegex(DataLoadError, "could not read"):
+                load_json_file("missing.json")
+
+    def test_reports_invalid_json_location(self):
+        with patch(
+            "pathlib.Path.open", mock_open(read_data='{"filters": }')
+        ):
+            with self.assertRaisesRegex(DataLoadError, "line 1, column"):
+                load_json_file("invalid.json")
+
+    def test_rejects_top_level_array(self):
+        with patch("pathlib.Path.open", mock_open(read_data="[]")):
+            with self.assertRaisesRegex(DataLoadError, "must be an object"):
+                load_json_file("array.json")
 
 
 if __name__ == "__main__":

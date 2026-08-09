@@ -613,6 +613,126 @@ OK
 
 다음 단일 기능은 `data.json` 파일 로드다. 파일 없음, JSON 문법 오류, 최상위 객체 여부를 처리하고 아직 개별 필터나 패턴을 분석하지 않은 원시 데이터 객체를 반환한다.
 
+## 단계 5: JSON 파일 로드
+
+### 목적
+
+지정한 경로의 UTF-8 JSON 파일을 읽어 Python 객체로 변환하고, 최상위 값이 객체(`dict`)인지 확인한다. 이번 기능은 파일을 안전하게 여는 일까지만 담당하며 `meta`, `filters`, `patterns` 내부 구조는 다음 단계에서 검증한다.
+
+파일 읽기와 스키마 검증을 분리하면 “파일 자체를 읽지 못한 문제”와 “읽었지만 데이터 구조가 잘못된 문제”를 구분해 설명할 수 있다.
+
+### 핵심 개념
+
+#### JSON 역직렬화
+
+`json.load(file)`은 JSON 텍스트를 Python 자료형으로 변환한다.
+
+```text
+JSON object  → dict
+JSON array   → list
+JSON string  → str
+JSON number  → int 또는 float
+```
+
+과제의 최상위 구조는 `meta`, `filters`, `patterns`라는 이름을 가진 객체여야 하므로 최상위 배열은 파싱에 성공하더라도 거부한다.
+
+#### 오류 변환과 예외 연결
+
+운영체제의 `OSError`와 JSON 모듈의 `JSONDecodeError`를 애플리케이션 예외 `DataLoadError`로 변환한다. `raise ... from error`를 사용하여 사용자에게는 이해하기 쉬운 메시지를 제공하면서 원래 예외도 디버깅 정보로 보존한다.
+
+- 파일 없음/권한 오류: 파일을 읽을 수 없다는 메시지
+- JSON 문법 오류: 오류가 발생한 행과 열
+- 최상위 배열 등: 최상위 객체가 필요하다는 메시지
+
+### 구현 내용
+
+- `mini_npu/loader.py`: `DataLoadError`, `load_json_file()`
+- `tests/test_loader.py`: 정상 UTF-8 객체, 파일 없음, 문법 오류, 최상위 배열
+
+`pathlib.Path`를 사용해 문자열 경로와 Path 객체를 모두 받을 수 있게 했고, 파일은 명시적으로 UTF-8로 연다.
+
+### 입력과 처리 과정
+
+정상 파일:
+
+```text
+"data.json"
+  → Path.open(encoding="utf-8")
+  → json.load()
+  → isinstance(data, dict)
+  → 원시 dict 반환
+```
+
+잘못된 JSON:
+
+```text
+{"filters": }
+  → json.load()
+  → JSONDecodeError(line, column)
+  → DataLoadError로 변환
+```
+
+### 실제 출력
+
+실제 제공 파일을 로드한 결과:
+
+```text
+top-level keys: ['meta', 'filters', 'patterns']
+loaded type: dict
+```
+
+없는 파일을 요청한 결과:
+
+```text
+missing.json -> ERROR: could not read data file missing.json: No such file or directory.
+```
+
+### 테스트
+
+첫 테스트에서는 `tempfile.TemporaryDirectory()`로 임시 JSON 파일을 만들려고 했다. 그러나 현재 실행 환경이 읽기 전용이라 사용할 수 있는 임시 디렉터리가 없어 네 테스트가 모두 다음 환경 오류로 실패했다.
+
+```text
+FileNotFoundError: No usable temporary directory found
+Ran 4 tests
+FAILED (errors=4)
+```
+
+이 실패는 로더가 파일을 읽다가 발생한 것이 아니라 테스트 준비 단계에서 발생했다. 따라서 `Path.open()`을 `mock_open()`으로 교체하여 메모리 안에서 파일 내용과 `FileNotFoundError`를 재현했다. 테스트 대상인 로더 로직만 격리하면서 파일 쓰기 권한에도 의존하지 않게 됐다.
+
+수정 후 기능 전용 테스트:
+
+```bash
+python3 -B -m unittest tests.test_loader.LoadJsonFileTests -v
+```
+
+```text
+Ran 4 tests in 0.003s
+OK
+```
+
+전체 회귀 테스트:
+
+```bash
+python3 -B -m unittest discover -s tests
+```
+
+```text
+Ran 48 tests in 0.005s
+OK
+```
+
+### 배운 점
+
+- JSON 문법이 올바른 것과 과제가 요구하는 최상위 구조가 올바른 것은 별개의 검증이다.
+- 서로 다른 하위 예외를 애플리케이션 예외로 통일하면 호출부의 오류 처리가 단순해진다.
+- 테스트 실패 지점을 읽으면 제품 코드 실패와 테스트 환경 실패를 구분할 수 있다.
+- 모의 파일은 파일 시스템 없이 정상 내용, 잘못된 내용, 읽기 오류를 재현할 수 있다.
+- 실제 파일을 한 번 더 읽어 단위 테스트의 모의 환경과 실제 동작을 함께 확인해야 한다.
+
+### 다음 단계
+
+다음 단일 기능은 최상위 JSON 스키마 검증이다. 로드된 dict에 `filters`와 `patterns` 객체가 반드시 있는지 확인하고, `meta`의 version/type 불일치는 분석을 막지 않는 경고로 반환한다.
+
 ## 전체 테스트 이력
 
 | 단계 | 실행 명령 | 테스트 수 | 결과 | 비고 |
@@ -625,6 +745,9 @@ OK
 | 단계 3 | `python3 -B -m unittest discover -s tests` | 36 | PASS | 전체 회귀 테스트 |
 | 단계 4 | `python3 -B -m unittest tests.test_loader -v` | 8 | PASS | 패턴 키 파싱 전용 테스트 |
 | 단계 4 | `python3 -B -m unittest discover -s tests` | 44 | PASS | 전체 회귀 테스트 |
+| 단계 5 | `TemporaryDirectory` 기반 로더 테스트 | 4 | 환경 오류 | 읽기 전용 환경에서 임시 디렉터리 생성 불가 |
+| 단계 5 | `python3 -B -m unittest tests.test_loader.LoadJsonFileTests -v` | 4 | PASS | 모의 파일 기반 JSON 로드 테스트 |
+| 단계 5 | `python3 -B -m unittest discover -s tests` | 48 | PASS | 전체 회귀 테스트 |
 
 ## 최종 회고
 
