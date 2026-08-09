@@ -733,6 +733,136 @@ OK
 
 다음 단일 기능은 최상위 JSON 스키마 검증이다. 로드된 dict에 `filters`와 `patterns` 객체가 반드시 있는지 확인하고, `meta`의 version/type 불일치는 분석을 막지 않는 경고로 반환한다.
 
+## 단계 6: 최상위 JSON 스키마 검증
+
+### 목적
+
+JSON 로더가 반환한 원시 dict에서 분석에 필수인 `filters`와 `patterns` 객체를 추출한다. `meta`는 버전 정보를 알려주지만 MAC 계산에 직접 필요하지 않으므로 잘못되어도 분석을 중단하지 않고 경고로 반환한다.
+
+### 핵심 개념
+
+#### 오류와 경고의 차이
+
+- **오류:** 이후 작업을 수행할 수 없는 상태다. `filters` 또는 `patterns`가 없거나 객체가 아니면 분석할 대상이나 기준이 없으므로 중단한다.
+- **경고:** 예상과 다르지만 현재 작업을 계속할 수 있는 상태다. `meta.version/type`이 달라도 필수 섹션이 객체라면 다음 검증을 진행할 수 있다.
+
+모든 이상 상태를 오류로 처리하면 사용할 수 있는 데이터까지 버리게 되고, 모든 상태를 경고로 처리하면 계산할 수 없는 데이터가 더 깊은 코드에서 실패한다. 따라서 이후 단계에 필요한지를 기준으로 심각도를 결정한다.
+
+#### 검증된 경계 객체
+
+`TopLevelSchema`는 검증을 통과한 `filters`, `patterns`와 경고 tuple을 함께 반환한다.
+
+```text
+TopLevelSchema
+├── filters: dict
+├── patterns: dict
+└── warnings: tuple[str, ...]
+```
+
+호출부는 원시 dict를 반복해서 검사하지 않고 이 객체를 받은 뒤 필수 두 섹션이 dict임을 믿을 수 있다.
+
+### 구현 내용
+
+- `mini_npu/loader.py`
+  - `SchemaValidationError`
+  - `TopLevelSchema`
+  - `validate_top_level_schema()`
+- `tests/test_loader.py`
+  - 정상 구조
+  - 필수 섹션 누락/자료형 오류
+  - meta 누락/값 불일치 경고
+
+내부 필터 행렬과 개별 패턴은 아직 검사하지 않는다. 이번 함수의 책임을 최상위 경계로 제한하여 오류 위치를 명확하게 유지한다.
+
+### 입력과 처리 과정
+
+정상 데이터:
+
+```text
+{
+  "meta": {"version": "1.0", "type": "json"},
+  "filters": {...},
+  "patterns": {...}
+}
+  → filters는 dict: 통과
+  → patterns는 dict: 통과
+  → meta 값 일치: 경고 없음
+```
+
+meta만 변경된 데이터:
+
+```text
+{
+  "meta": {"version": "2.0", "type": "text"},
+  "filters": {},
+  "patterns": {}
+}
+  → 필수 섹션 통과
+  → version/type 경고 2개
+  → 분석 계속 가능
+```
+
+### 실제 출력
+
+실제 `data.json`:
+
+```text
+actual filters: ['size_5', 'size_13', 'size_25']
+actual pattern count: 6
+actual warnings: ()
+```
+
+변경된 meta 예시:
+
+```text
+changed meta warnings: ("meta.version is not '1.0'.", "meta.type is not 'json'.")
+```
+
+### 테스트
+
+기능 전용 테스트:
+
+```bash
+python3 -B -m unittest tests.test_loader.ValidateTopLevelSchemaTests -v
+```
+
+```text
+Ran 7 tests in 0.000s
+OK
+```
+
+전체 회귀 테스트:
+
+```bash
+python3 -B -m unittest discover -s tests
+```
+
+```text
+Ran 55 tests in 0.005s
+OK
+```
+
+검증 사례:
+
+- 정상 meta/filters/patterns
+- filters 누락
+- patterns 누락
+- 필수 섹션이 배열인 경우
+- 최상위 데이터가 객체가 아닌 경우
+- meta 누락
+- 예상하지 않은 version과 type
+
+### 배운 점
+
+- 검증은 한 번에 모든 내부를 검사하기보다 경계별로 나누면 실패 위치를 이해하기 쉽다.
+- 오류와 경고는 이후 처리가 가능한지를 기준으로 구분할 수 있다.
+- 검증 결과를 구조화하면 다음 함수가 이미 확인된 조건을 반복 검사하지 않아도 된다.
+- 경고를 문자열 tuple로 반환하면 콘솔 계층이 출력 시점을 결정할 수 있고 검증 함수는 `print()`에 의존하지 않는다.
+
+### 다음 단계
+
+다음 단일 기능은 필터 그룹 검증이다. `size_5` 같은 필터 키에서 크기를 확인하고 `cross`, `x` 라벨을 정규화하며 두 필터가 모두 N×N 유한 숫자 행렬인지 검증한다.
+
 ## 전체 테스트 이력
 
 | 단계 | 실행 명령 | 테스트 수 | 결과 | 비고 |
@@ -748,6 +878,8 @@ OK
 | 단계 5 | `TemporaryDirectory` 기반 로더 테스트 | 4 | 환경 오류 | 읽기 전용 환경에서 임시 디렉터리 생성 불가 |
 | 단계 5 | `python3 -B -m unittest tests.test_loader.LoadJsonFileTests -v` | 4 | PASS | 모의 파일 기반 JSON 로드 테스트 |
 | 단계 5 | `python3 -B -m unittest discover -s tests` | 48 | PASS | 전체 회귀 테스트 |
+| 단계 6 | `python3 -B -m unittest tests.test_loader.ValidateTopLevelSchemaTests -v` | 7 | PASS | 최상위 스키마 검증 전용 테스트 |
+| 단계 6 | `python3 -B -m unittest discover -s tests` | 55 | PASS | 전체 회귀 테스트 |
 
 ## 최종 회고
 

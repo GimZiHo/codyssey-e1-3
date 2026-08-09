@@ -5,8 +5,11 @@ from unittest.mock import mock_open, patch
 from mini_npu.loader import (
     DataLoadError,
     ParsedPatternKey,
+    SchemaValidationError,
+    TopLevelSchema,
     load_json_file,
     parse_pattern_key,
+    validate_top_level_schema,
 )
 
 
@@ -76,6 +79,62 @@ class LoadJsonFileTests(unittest.TestCase):
         with patch("pathlib.Path.open", mock_open(read_data="[]")):
             with self.assertRaisesRegex(DataLoadError, "must be an object"):
                 load_json_file("array.json")
+
+
+class ValidateTopLevelSchemaTests(unittest.TestCase):
+    def test_returns_required_sections_without_warnings(self):
+        filters = {"size_5": {}}
+        patterns = {"size_5_1": {}}
+        data = {
+            "meta": {"version": "1.0", "type": "json"},
+            "filters": filters,
+            "patterns": patterns,
+        }
+
+        result = validate_top_level_schema(data)
+
+        self.assertEqual(
+            result,
+            TopLevelSchema(filters=filters, patterns=patterns, warnings=()),
+        )
+
+    def test_rejects_missing_filters(self):
+        with self.assertRaisesRegex(SchemaValidationError, "'filters' is missing"):
+            validate_top_level_schema({"patterns": {}})
+
+    def test_rejects_missing_patterns(self):
+        with self.assertRaisesRegex(SchemaValidationError, "'patterns' is missing"):
+            validate_top_level_schema({"filters": {}})
+
+    def test_rejects_non_object_required_section(self):
+        with self.assertRaisesRegex(SchemaValidationError, "must be an object"):
+            validate_top_level_schema({"filters": [], "patterns": {}})
+
+    def test_warns_when_meta_is_missing(self):
+        result = validate_top_level_schema({"filters": {}, "patterns": {}})
+
+        self.assertEqual(
+            result.warnings,
+            ("meta is missing or is not an object.",),
+        )
+
+    def test_warns_for_unexpected_meta_values(self):
+        data = {
+            "meta": {"version": "2.0", "type": "text"},
+            "filters": {},
+            "patterns": {},
+        }
+
+        result = validate_top_level_schema(data)
+
+        self.assertEqual(
+            result.warnings,
+            ("meta.version is not '1.0'.", "meta.type is not 'json'."),
+        )
+
+    def test_rejects_non_object_top_level_data(self):
+        with self.assertRaisesRegex(SchemaValidationError, "top-level"):
+            validate_top_level_schema([])
 
 
 if __name__ == "__main__":

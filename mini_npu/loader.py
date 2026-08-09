@@ -4,7 +4,7 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Union
+from typing import Any, Dict, Tuple, Union
 
 
 PATTERN_KEY = re.compile(r"^size_([1-9]\d*)_([^\s]+)$")
@@ -12,6 +12,10 @@ PATTERN_KEY = re.compile(r"^size_([1-9]\d*)_([^\s]+)$")
 
 class DataLoadError(Exception):
     """Raised when a JSON data file cannot be loaded as an object."""
+
+
+class SchemaValidationError(ValueError):
+    """Raised when required top-level JSON sections are invalid."""
 
 
 @dataclass(frozen=True)
@@ -25,6 +29,15 @@ class ParsedPatternKey:
     def filter_key(self) -> str:
         """Return the matching key used in the filters object."""
         return "size_{}".format(self.size)
+
+
+@dataclass(frozen=True)
+class TopLevelSchema:
+    """Validated top-level sections and non-fatal metadata warnings."""
+
+    filters: Dict[str, Any]
+    patterns: Dict[str, Any]
+    warnings: Tuple[str, ...]
 
 
 def parse_pattern_key(key: str) -> ParsedPatternKey:
@@ -68,3 +81,35 @@ def load_json_file(path: Union[str, Path]) -> Dict[str, Any]:
         raise DataLoadError("top-level JSON value must be an object.")
 
     return data
+
+
+def validate_top_level_schema(data: Dict[str, Any]) -> TopLevelSchema:
+    """Validate required sections and collect non-fatal metadata warnings."""
+    if not isinstance(data, dict):
+        raise SchemaValidationError("top-level data must be an object.")
+
+    for section_name in ("filters", "patterns"):
+        if section_name not in data:
+            raise SchemaValidationError(
+                "required section {!r} is missing.".format(section_name)
+            )
+        if not isinstance(data[section_name], dict):
+            raise SchemaValidationError(
+                "required section {!r} must be an object.".format(section_name)
+            )
+
+    warnings = []
+    meta = data.get("meta")
+    if not isinstance(meta, dict):
+        warnings.append("meta is missing or is not an object.")
+    else:
+        if meta.get("version") != "1.0":
+            warnings.append("meta.version is not '1.0'.")
+        if meta.get("type") != "json":
+            warnings.append("meta.type is not 'json'.")
+
+    return TopLevelSchema(
+        filters=data["filters"],
+        patterns=data["patterns"],
+        warnings=tuple(warnings),
+    )
